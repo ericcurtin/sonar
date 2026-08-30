@@ -48,6 +48,7 @@ from aphrodite.transformers_utils.model_arch_config_convertor import (
     MODEL_ARCH_CONFIG_CONVERTORS,
     ModelArchConfigConvertorBase,
 )
+from aphrodite.transformers_utils.oci_utils import is_oci_uri, resolve_oci_model
 from aphrodite.transformers_utils.repo_utils import resolve_revision
 from aphrodite.transformers_utils.runai_utils import ObjectStorageModel, is_runai_obj_uri
 from aphrodite.transformers_utils.utils import maybe_model_redirect
@@ -1026,8 +1027,10 @@ class ModelConfig:
         return self._architecture
 
     def maybe_pull_model_tokenizer_for_runai(self, model: str, tokenizer: str) -> None:
-        """Pull model/tokenizer from Object Storage to temporary
-        directory when needed.
+        """Pull model/tokenizer from Object Storage (s3://, gs://, az://) or
+        an OCI registry (oci://) to a local directory when needed.
+
+        Model and tokenizer are handled independently, so schemes can be mixed.
 
         Args:
             model: Model name or path
@@ -1038,10 +1041,15 @@ class ModelConfig:
         if self.model_weights:
             return
 
-        if not (is_runai_obj_uri(model) or is_runai_obj_uri(tokenizer)):
-            return
+        if is_oci_uri(model):
+            self.model_weights = model
+            self.model = resolve_oci_model(model)
 
-        if is_runai_obj_uri(model):
+            # A ModelPack image is pulled whole, so the tokenizer is in it
+            if model == tokenizer:
+                self.tokenizer = self.model
+                return
+        elif is_runai_obj_uri(model):
             object_storage_model = ObjectStorageModel(url=model)
             object_storage_model.pull_files(model, allow_pattern=["*.model", "*.py", "*.json"])
             self.model_weights = model
@@ -1063,7 +1071,9 @@ class ModelConfig:
                 return
 
         # Only download tokenizer if needed and not already handled
-        if is_runai_obj_uri(tokenizer):
+        if is_oci_uri(tokenizer):
+            self.tokenizer = resolve_oci_model(tokenizer)
+        elif is_runai_obj_uri(tokenizer):
             object_storage_tokenizer = ObjectStorageModel(url=tokenizer)
             object_storage_tokenizer.pull_files(
                 tokenizer,
