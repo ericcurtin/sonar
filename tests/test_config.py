@@ -1598,6 +1598,36 @@ def test_s3_url_different_model_and_tokenizer(mock_pull_files):
 
 
 @pytest.mark.parametrize(
+    ("model", "tokenizer", "expected_model", "expected_tokenizer"),
+    [
+        ("oci://ghcr.io/org/model:tag", "s3://bucket/tok/", "/oci/model", "/s3/tok"),
+        ("s3://bucket/model/", "oci://ghcr.io/org/tok:tag", "/s3/model", "/oci/tok"),
+        ("oci://ghcr.io/org/model:tag", "oci://ghcr.io/org/model:tag", "/oci/model", "/oci/model"),
+        ("oci://ghcr.io/org/model:tag", "org/tokenizer", "/oci/model", "org/tokenizer"),
+        ("org/model", "oci://ghcr.io/org/tok:tag", "org/model", "/oci/tok"),
+    ],
+)
+def test_oci_and_s3_model_tokenizer_can_be_mixed(model, tokenizer, expected_model, expected_tokenizer):
+    """oci:// and s3:// references can be mixed for model and tokenizer."""
+
+    def kind(ref):
+        return "model" if "model" in ref else "tok"
+
+    with (
+        patch("aphrodite.config.model.resolve_oci_model", side_effect=lambda ref: f"/oci/{kind(ref)}"),
+        patch(
+            "aphrodite.config.model.ObjectStorageModel",
+            side_effect=lambda url: SimpleNamespace(dir=f"/s3/{kind(url)}", pull_files=lambda *a, **k: None),
+        ),
+    ):
+        config = MockConfig(model=model, tokenizer=tokenizer)
+        ModelConfig.maybe_pull_model_tokenizer_for_runai(config, model, tokenizer)
+
+    assert config.model == expected_model
+    assert config.tokenizer == expected_tokenizer
+
+
+@pytest.mark.parametrize(
     ("model_id", "expected_attn_type", "expected_result", "reason"),
     [
         # pooling models

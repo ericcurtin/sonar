@@ -14,6 +14,10 @@ Contract (from llmman's src/cmd/serve.rs and src/daemon.rs):
     objects, terminated by ``{"status":"success"}`` or ``{"error":"..."}``.
     An error can arrive in-band at HTTP 200.
   - ``llmman resolve --no-pull <ref>`` -> one line of JSON carrying ``path``.
+
+Limitation: ``llmman resolve`` reads the local store (``LLMMAN_MODELS``) and
+never contacts the daemon, so the daemon must share that store with this
+process (same host and user, or ``LLMMAN_MODELS`` on shared storage).
 """
 
 import ipaddress
@@ -198,7 +202,8 @@ def resolve(reference: str) -> str:
     if completed.returncode != 0:
         raise RuntimeError(
             f"`{binary} resolve --no-pull {reference}` failed with exit code "
-            f"{completed.returncode}: {completed.stderr.strip()}"
+            f"{completed.returncode}: {completed.stderr.strip()}. The llmman daemon must "
+            "share this process's local store (same host and user, or LLMMAN_MODELS on shared storage)."
         )
     return parse_resolve_output(completed.stdout, reference)
 
